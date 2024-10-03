@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
+	"strings"
+	"time"
 )
-
-// Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
-var _ = net.Listen
-var _ = os.Exit
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -21,9 +22,41 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
-	_, err = l.Accept()
+	defer l.Close()
+
+	conn, err := l.Accept()
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
+	}
+
+	handleConnection(conn)
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Time{})
+
+	reader := bufio.NewReader(conn)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				log.Println("Client disconnected")
+			} else {
+				log.Println("Error reading line: ", err)
+			}
+			return
+		}
+
+		input := strings.TrimSpace(line)
+
+		fmt.Printf("%s", input)
+
+		if input == "PING" {
+			conn.Write([]byte("+PONG\r\n"))
+		}
 	}
 }
