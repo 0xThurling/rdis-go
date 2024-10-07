@@ -1,12 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 )
 
+type RESPValue struct {
+	arr []string
+}
+
+// Server Implementations
 type Server struct {
 	listener net.Listener
 	quit     chan struct{}
@@ -61,33 +68,91 @@ func (s *Server) Loop() {
 	}
 }
 
+func parseRESPArr(respValue *RESPValue, respArr string) {
+	reader := bufio.NewReader(strings.NewReader(respArr))
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "*") {
+			respArrElement := line[1:]
+			fmt.Printf("Number of elements: %s\n", respArrElement)
+
+			count, err := strconv.Atoi(respArrElement)
+			if err != nil {
+				fmt.Println("Error converting count to int", err)
+				break
+			}
+
+			respValue.arr = make([]string, count)
+
+			for i := 0; i < count*2; i++ {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "$") {
+					continue
+				} else {
+					respValue.arr[i/2] = line
+				}
+			}
+
+			return
+		}
+	}
+
+}
+
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
 
 	fmt.Println("New connection from", conn.RemoteAddr())
-	buffer := make([]byte, 1024)
+
+	resp_value := RESPValue{}
 
 	for {
+		buffer := make([]byte, 1024)
 		select {
 		case <-s.quit:
 			return
 		default:
 			n, err := conn.Read(buffer)
 			if err != nil {
-				fmt.Println("Error reading from connection", err)
+				fmt.Printf("Error reading from connection", err)
 				return
 			}
 
-			fmt.Printf("Received %d bytes: %s\n", n, string(buffer[:n]))
+			reader := bufio.NewReader(strings.NewReader(string(buffer[:n])))
 
-			if strings.Contains(string(buffer[:n]), "PING") {
-				_, err = conn.Write([]byte("+PONG\r\n"))
+			firstByte, _ := reader.ReadByte()
+
+			if firstByte == '*' && len(resp_value.arr) == 0 {
+				parseRESPArr(&resp_value, string(buffer[:n]))
+			} else if firstByte == '$' && len(resp_value.arr) == 0 {
+				parseRESPArr(&resp_value, "*1\r\n"+string(buffer[:n]))
 			}
-			if err != nil {
-				fmt.Println("Error writing to connection", err)
-				return
+
+			if resp_value.arr == nil {
+				continue
 			}
+
+			if strings.ToLower(resp_value.arr[0]) == "echo" {
+				echoCount := len(resp_value.arr[len(resp_value.arr)-1])
+				finalOutput := fmt.Sprintf("$%d\r\n%s\r\n", echoCount, resp_value.arr[len(resp_value.arr)-1])
+				conn.Write([]byte(finalOutput))
+			} else {
+				conn.Write([]byte("+PONG\r\n"))
+			}
+
+			resp_value.arr = nil
 		}
 	}
 }
