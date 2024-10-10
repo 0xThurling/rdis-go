@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type RESPValue struct {
@@ -111,6 +112,10 @@ func parseRESPArr(respValue *RESPValue, respArr string) {
 
 }
 
+func checkIfArrayIndexExists(arr RESPValue, index int) bool {
+	return len(arr.arr) > index
+}
+
 func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 	defer s.wg.Done()
 	defer conn.Close()
@@ -150,7 +155,17 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 				finalOutput := fmt.Sprintf("$%d\r\n%s\r\n", echoCount, resp_value.arr[len(resp_value.arr)-1])
 				conn.Write([]byte(finalOutput))
 			} else if strings.ToLower(resp_value.arr[0]) == "set" {
-				ht.Insert(resp_value.arr[1], resp_value.arr[2])
+				if checkIfArrayIndexExists(resp_value, 4) {
+					if strings.ToLower(resp_value.arr[3]) == "px" {
+						exp, err := strconv.Atoi(resp_value.arr[4])
+						if err != nil {
+							println("Error converting exp to int while setting expiration date", err)
+						}
+						ht.Insert(resp_value.arr[1], resp_value.arr[2], &exp, time.Now())
+					}
+				} else {
+					ht.Insert(resp_value.arr[1], resp_value.arr[2], nil, time.Now())
+				}
 				conn.Write([]byte("+OK\r\n"))
 			} else if strings.ToLower(resp_value.arr[0]) == "get" {
 				value, found := ht.Get(resp_value.arr[1])

@@ -1,18 +1,16 @@
 package packages
 
 import (
-	"fmt"
 	"hash/fnv"
 	"sync"
+	"time"
 )
 
-func Test() {
-	fmt.Printf("test")
-}
-
 type KeyValue struct {
-	Key   string
-	Value interface{}
+	Key        string
+	Value      interface{}
+	Expiration *int
+	SetTime    time.Time
 }
 
 type HashTable struct {
@@ -34,12 +32,16 @@ func (ht *HashTable) hash(key string) int {
 	return int(h.Sum32()) % ht.size
 }
 
-func (ht *HashTable) Insert(key string, value interface{}) {
+func (ht *HashTable) Insert(key string, value interface{}, expiration *int, setTime time.Time) {
 	ht.Lock()
 	defer ht.Unlock()
 
 	index := ht.hash(key)
-	ht.table[index] = append(ht.table[index], KeyValue{Key: key, Value: value})
+	if expiration != nil {
+		ht.table[index] = append(ht.table[index], KeyValue{Key: key, Value: value, Expiration: expiration, SetTime: setTime})
+	} else {
+		ht.table[index] = append(ht.table[index], KeyValue{Key: key, Value: value, SetTime: setTime})
+	}
 }
 
 func (ht *HashTable) Get(key string) (interface{}, bool) {
@@ -48,8 +50,15 @@ func (ht *HashTable) Get(key string) (interface{}, bool) {
 
 	index := ht.hash(key)
 	for _, kv := range ht.table[index] {
-		if kv.Key == key {
+		if kv.Key == key && kv.Expiration == nil {
 			return kv.Value, true
+		} else if kv.Key == key && kv.Expiration != nil {
+			if time.Now().Sub(kv.SetTime).Milliseconds() < int64(*kv.Expiration) {
+				return kv.Value, true
+			} else {
+				println(time.Now().Sub(kv.SetTime).Milliseconds())
+				return nil, false
+			}
 		}
 	}
 
