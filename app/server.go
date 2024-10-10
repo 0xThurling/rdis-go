@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/codecrafters-io/redis-starter-go/app/packages"
 	"net"
 	"strconv"
 	"strings"
@@ -32,9 +33,9 @@ func NewServer(address string) (*Server, error) {
 	}, nil
 }
 
-func (s *Server) Start() {
+func (s *Server) Start(ht *packages.HashTable) {
 	s.wg.Add(1)
-	go s.Loop()
+	go s.Loop(ht)
 }
 
 func (s *Server) Stop() {
@@ -43,7 +44,7 @@ func (s *Server) Stop() {
 	s.wg.Wait()
 }
 
-func (s *Server) Loop() {
+func (s *Server) Loop(ht *packages.HashTable) {
 	defer s.wg.Done()
 
 	for {
@@ -62,7 +63,7 @@ func (s *Server) Loop() {
 				}
 			} else {
 				s.wg.Add(1)
-				go s.handleConnection(conn)
+				go s.handleConnection(conn, ht)
 			}
 		}
 	}
@@ -110,7 +111,7 @@ func parseRESPArr(respValue *RESPValue, respArr string) {
 
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 	defer s.wg.Done()
 	defer conn.Close()
 
@@ -148,6 +149,18 @@ func (s *Server) handleConnection(conn net.Conn) {
 				echoCount := len(resp_value.arr[len(resp_value.arr)-1])
 				finalOutput := fmt.Sprintf("$%d\r\n%s\r\n", echoCount, resp_value.arr[len(resp_value.arr)-1])
 				conn.Write([]byte(finalOutput))
+			} else if strings.ToLower(resp_value.arr[0]) == "set" {
+				ht.Insert(resp_value.arr[1], resp_value.arr[2])
+				conn.Write([]byte("+OK\r\n"))
+			} else if strings.ToLower(resp_value.arr[0]) == "get" {
+				value, found := ht.Get(resp_value.arr[1])
+				if found {
+					count := len(value.(string))
+					finalOutput := fmt.Sprintf("$%d\r\n%s\r\n", count, value.(string))
+					conn.Write([]byte(finalOutput))
+				} else {
+					conn.Write([]byte("$-1\r\n"))
+				}
 			} else {
 				conn.Write([]byte("+PONG\r\n"))
 			}
@@ -168,7 +181,9 @@ func main() {
 		return
 	}
 
-	server.Start()
+	ht := packages.NewHashTable(30)
+
+	server.Start(ht)
 
 	fmt.Println("Press Enter to stop the server...")
 	fmt.Scanln()
