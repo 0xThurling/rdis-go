@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/codecrafters-io/redis-starter-go/app/packages"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -185,9 +187,35 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 	}
 }
 
+func handleCliArguments(args []string) {
+	dirName := ""
+
+	for i, arg := range args {
+		if arg == "--dir" {
+			if _, err := os.Stat(args[i+1]); os.IsNotExist(err) {
+				fmt.Printf("Directory doesn't exist\r\n")
+				os.Mkdir(args[i+1], os.ModePerm)
+				dirName = args[i+1]
+			}
+		}
+		if arg == "--dbfilename" {
+			filePath := filepath.Join(dirName, args[i+1])
+			file, err := os.Create(filePath)
+			if err != nil {
+				fmt.Println("Error creating file", err)
+			}
+
+			defer file.Close()
+			fmt.Println("File created successfully\n")
+		}
+	}
+}
+
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
+
+	handleCliArguments(os.Args[1:])
 
 	// Uncomment this block to pass the first stage
 	server, err := NewServer(":6379")
