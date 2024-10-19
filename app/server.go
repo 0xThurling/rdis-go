@@ -118,6 +118,14 @@ func checkIfArrayIndexExists(arr RESPValue, index int) bool {
 	return len(arr.arr) > index
 }
 
+func getConfigInformation(key []string, ht *packages.HashTable) (interface{}, bool) {
+	if strings.ToLower(key[0]) == "get" {
+		configKey := fmt.Sprintf("config_%s", key[1])
+		return ht.Get(configKey)
+	}
+	return nil, false
+}
+
 func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 	defer s.wg.Done()
 	defer conn.Close()
@@ -178,6 +186,14 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 				} else {
 					conn.Write([]byte("$-1\r\n"))
 				}
+			} else if strings.ToLower(resp_value.arr[0]) == "config" {
+				info, found := getConfigInformation(resp_value.arr[1:], ht)
+				fmt.Println(info)
+				if found {
+					count := len(info.(string))
+					finalOutput := fmt.Sprintf("*2\r\n$3\r\n%s\r\n$%d\r\n%s\r\n", resp_value.arr[len(resp_value.arr)-1], count, info.(string))
+					conn.Write([]byte(finalOutput))
+				}
 			} else {
 				conn.Write([]byte("+PONG\r\n"))
 			}
@@ -187,15 +203,20 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 	}
 }
 
-func handleCliArguments(args []string) {
+func handleCliArguments(args []string, ht *packages.HashTable) {
 	dirName := ""
 
 	for i, arg := range args {
 		if arg == "--dir" {
 			if _, err := os.Stat(args[i+1]); os.IsNotExist(err) {
 				fmt.Printf("Directory doesn't exist\r\n")
+				ht.Insert("config_dir", args[i+1], nil, time.Now())
 				os.Mkdir(args[i+1], os.ModePerm)
 				dirName = args[i+1]
+			} else if _, found := ht.Get("dir"); !found {
+				ht.Insert("config_dir", args[i+1], nil, time.Now())
+			} else {
+				fmt.Println("Directory Exists\n")
 			}
 		}
 		if arg == "--dbfilename" {
@@ -207,6 +228,7 @@ func handleCliArguments(args []string) {
 
 			defer file.Close()
 			fmt.Println("File created successfully\n")
+			ht.Insert("config_dbfilename", args[i+1], nil, time.Now())
 		}
 	}
 }
@@ -215,7 +237,9 @@ func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
 
-	handleCliArguments(os.Args[1:])
+	ht := packages.NewHashTable(30)
+
+	handleCliArguments(os.Args[1:], ht)
 
 	// Uncomment this block to pass the first stage
 	server, err := NewServer(":6379")
@@ -223,8 +247,6 @@ func main() {
 		fmt.Println("Error creating server", err)
 		return
 	}
-
-	ht := packages.NewHashTable(30)
 
 	server.Start(ht)
 
