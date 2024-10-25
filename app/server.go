@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/codecrafters-io/redis-starter-go/app/assert"
 	"github.com/codecrafters-io/redis-starter-go/app/packages"
 	"net"
 	"os"
@@ -194,6 +195,9 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 					finalOutput := fmt.Sprintf("*2\r\n$3\r\n%s\r\n$%d\r\n%s\r\n", resp_value.arr[len(resp_value.arr)-1], count, info.(string))
 					conn.Write([]byte(finalOutput))
 				}
+			} else if strings.ToLower(resp_value.arr[0]) == "save" {
+				fh := packages.CreateFileHandler()
+				fh.UpdateRedisFile(ht)
 			} else {
 				conn.Write([]byte("+PONG\r\n"))
 			}
@@ -204,23 +208,26 @@ func (s *Server) handleConnection(conn net.Conn, ht *packages.HashTable) {
 }
 
 func handleCliArguments(args []string, ht *packages.HashTable) {
-	dirName := ""
-
 	for i, arg := range args {
 		if arg == "--dir" {
 			if _, err := os.Stat(args[i+1]); os.IsNotExist(err) {
 				fmt.Printf("Directory doesn't exist\r\n")
 				ht.Insert("config_dir", args[i+1], nil, time.Now())
 				os.Mkdir(args[i+1], os.ModePerm)
-				dirName = args[i+1]
 			} else if _, found := ht.Get("dir"); !found {
+				fmt.Println("Directory Exists: Adding key\n")
 				ht.Insert("config_dir", args[i+1], nil, time.Now())
 			} else {
 				fmt.Println("Directory Exists\n")
 			}
 		}
 		if arg == "--dbfilename" {
-			filePath := filepath.Join(dirName, args[i+1])
+			dir, htErr := ht.Get("config_dir")
+
+			assert.Assert(!htErr, "Failed to get the directory")
+
+			filePath := filepath.Join(dir.(string), args[i+1])
+			println(filePath)
 			file, err := os.Create(filePath)
 			if err != nil {
 				fmt.Println("Error creating file", err)
@@ -228,6 +235,11 @@ func handleCliArguments(args []string, ht *packages.HashTable) {
 
 			defer file.Close()
 			fmt.Println("File created successfully\n")
+
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				fmt.Printf("Error: File was not created despite no errors: %s\n", filePath)
+				continue
+			}
 			ht.Insert("config_dbfilename", args[i+1], nil, time.Now())
 		}
 	}
