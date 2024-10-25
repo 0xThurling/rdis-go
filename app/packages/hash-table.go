@@ -2,6 +2,7 @@ package packages
 
 import (
 	"hash/fnv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -76,4 +77,36 @@ func (ht *HashTable) Delete(key string) {
 			return
 		}
 	}
+}
+
+func (ht *HashTable) HashLength() int {
+	ht.Lock()
+	defer ht.Unlock()
+
+	count := 0
+	for _, bucket := range ht.table {
+		for _, kv := range bucket {
+			if !strings.HasPrefix(kv.Key, "config_") {
+				count++
+			}
+		}
+	}
+
+	return count
+}
+
+func (ht *HashTable) GetKeyValues() map[int][]KeyValue {
+	ht.Lock()
+	defer ht.Unlock()
+
+	tempKeyValues := make(map[int][]KeyValue)
+	for hash, bucket := range ht.table {
+		for _, kv := range bucket {
+			if !strings.HasPrefix(kv.Key, "config_") {
+				tempKeyValues[hash] = append(tempKeyValues[hash], kv)
+			}
+		}
+	}
+
+	return tempKeyValues
 }

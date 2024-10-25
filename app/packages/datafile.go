@@ -70,6 +70,33 @@ func (fr *FileReader) WriteAuxFields(file *os.File) {
 	}
 }
 
+func (fr *FileReader) writeDBSelector(file *os.File, ht *HashTable) {
+	_, err := file.Write([]byte{0xFE, 0x00})
+	assert.Assert(err != nil, fmt.Sprintf("Error writing DB selector to database file: %v\n", err))
+
+	size := uint32(ht.HashLength())
+
+	_, err = file.Write([]byte{0xFB, byte(size)})
+	assert.Assert(err != nil, fmt.Sprintf("Error writing Resize DB marker to database file: %v\n", err))
+}
+
+func (fr *FileReader) writeKeyValuePair(file *os.File, ht *HashTable) {
+	keyValues := ht.GetKeyValues()
+
+	for k, v := range keyValues {
+		println(k, v[0].Value.(string))
+
+		_, err := file.Write([]byte{0x00})
+		assert.Assert(err != nil, fmt.Sprintf("Error writing value type to database file: %v\n", err))
+
+		_, err = file.Write([]byte(strconv.Itoa(k)))
+		assert.Assert(err != nil, fmt.Sprintf("Error writing key to database file: %v\n", err))
+
+		_, err = file.Write([]byte(v[0].Value.(string)))
+		assert.Assert(err != nil, fmt.Sprintf("Error writing key to database file: %v\n", err))
+	}
+}
+
 func (fr *FileReader) UpdateRedisFile(ht *HashTable) {
 	fr.Lock()
 	defer fr.Unlock()
@@ -77,6 +104,15 @@ func (fr *FileReader) UpdateRedisFile(ht *HashTable) {
 	file := fr.GetRedisFile(ht)
 	defer file.Close()
 
+	println("Writing file metadata")
 	fr.AddRedisFileMetaData(file)
+
+	println("Writing aux fields")
 	fr.WriteAuxFields(file)
+
+	println("Writing DB selector")
+	fr.writeDBSelector(file, ht)
+
+	println("Writing key value pairs")
+	fr.writeKeyValuePair(file, ht)
 }
